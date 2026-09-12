@@ -8,6 +8,8 @@ other endpoint returns 503, so the frontend can show what went wrong.
 """
 from contextlib import asynccontextmanager
 
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,7 +22,14 @@ from backend.routers import accounts, alerts, ask, health, predict, stats, trans
 
 log = config.get_logger("backend")
 
-ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    # Vercel deployments — set ALLOWED_ORIGIN in Railway env vars to lock
+    # this down to your specific domain once you know it, e.g.
+    # https://aml-ledger.vercel.app
+    *([os.environ["ALLOWED_ORIGIN"]] if os.environ.get("ALLOWED_ORIGIN") else []),
+]
 
 
 @asynccontextmanager

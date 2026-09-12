@@ -6,12 +6,18 @@
 __pycache__/
 *.pyc
 
-# generated artefacts (rebuild with ml.scripts.*)
+# raw data (large, not committed)
 data/raw/
+
+# generated data artefacts (large, use Railway volume)
 data/processed/
 data/graph/
-models/
 outputs/
+
+# model artefacts — small enough to commit, needed by Railway at build time
+# models/xgb.json          ~10 MB  ✓ committed
+# models/xgb_columns.json  ~4 KB   ✓ committed
+# models/iforest.joblib    ~5 MB   ✓ committed
 
 # frontend
 frontend/node_modules/
