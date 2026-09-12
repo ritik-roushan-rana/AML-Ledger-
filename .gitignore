@@ -1,0 +1,23 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# generated artefacts (rebuild with ml.scripts.*)
+data/raw/
+data/processed/
+data/graph/
+models/
+outputs/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

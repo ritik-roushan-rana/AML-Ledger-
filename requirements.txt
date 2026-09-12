@@ -1,0 +1,13 @@
+pandas
+numpy
+matplotlib
+pyarrow
+pyyaml
+networkx
+scipy
+xgboost
+scikit-learn
+shapfastapi
+uvicorn[standard]
+neo4j
+python-dotenv

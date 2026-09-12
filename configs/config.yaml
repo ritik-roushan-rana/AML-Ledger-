@@ -1,0 +1,33 @@
+dataset:
+  transactions: HI-Small_Trans.csv
+  patterns: HI-Small_Patterns.txt
+  base_currency: "US Dollar"
+
+fx_to_usd:
+  US Dollar: 1.0
+  Euro: 1.08
+  Yuan: 0.14
+  Rupee: 0.012
+  Yen: 0.0067
+  Swiss Franc: 1.12
+  Brazil Real: 0.20
+  Canadian Dollar: 0.74
+  Australian Dollar: 0.66
+  UK Pound: 1.27
+  Mexican Peso: 0.058
+  Ruble: 0.011
+  Saudi Riyal: 0.27
+  Shekel: 0.27
+  Bitcoin: 60000.0
+
+split:
+  train_end: null
+  val_end: null
+
+eda:
+  sample_rows: null
+  top_n_accounts: 20
+
+neo4j:
+  uri: bolt://localhost:7687
+  user: neo4j

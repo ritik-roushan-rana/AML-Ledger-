@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* dark mode is a class on <html>, toggled in Layout (persisted, defaults to system) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens from stitch_aml_alert_triage_console/aml_ledger/DESIGN.md */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-canvas: #F7F8FA;
+  --color-card: #FFFFFF;
+  --color-line: #E5E7EB;
+  --color-line-soft: #F3F4F6;
+  --color-hover: #F8FAFC;
+  --color-well: #F9FAFB;
+
+  --color-ink: #111827;
+  --color-ink-2: #1F2937;
+  --color-muted: #4B5563;
+  --color-faint: #9CA3AF;
+
+  --color-primary: #2563EB;
+  --color-primary-dark: #1D4ED8;
+  --color-primary-tint: #EFF6FF;
+  --color-primary-line: #BFDBFE;
+
+  --color-high: #DC2626;
+  --color-high-tint: #FEF2F2;
+  --color-high-line: #FCA5A5;
+  --color-medium: #D97706;
+  --color-medium-tint: #FFFBEB;
+  --color-medium-line: #FCD34D;
+  --color-low: #2563EB;
+  --color-low-tint: #EFF6FF;
+  --color-low-line: #BFDBFE;
+  --color-clear: #6B7280;
+  --color-clear-tint: #F3F4F6;
+  --color-clear-line: #E5E7EB;
+
+  --color-ok: #16A34A;
+  --color-ok-tint: #F0FDF4;
+  --color-llm: #7C3AED;
+  --color-llm-tint: #F5F3FF;
+  --color-neo: #059669;
+  --color-neo-tint: #ECFDF5;
+
+  --color-tooltip: #111827;
+  --color-on-tooltip: #FFFFFF;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / .05), 0 1px 2px -1px rgb(0 0 0 / .03);
+  --shadow-pop: 0 10px 15px -3px rgb(0 0 0 / .06), 0 4px 6px -4px rgb(0 0 0 / .04);
+}
+
+/* Dark palette: same roles, re-stepped for a #0F1419 canvas. Band hues are
+   lifted one step so they keep contrast on dark surfaces. */
+.dark {
+  color-scheme: dark;
+  --color-canvas: #0F1419;
+  --color-card: #161C25;
+  --color-line: #273040;
+  --color-line-soft: #1F2733;
+  --color-hover: #1B2230;
+  --color-well: #1A2130;
+
+  --color-ink: #F1F5F9;
+  --color-ink-2: #E2E8F0;
+  --color-muted: #94A3B8;
+  --color-faint: #64748B;
+
+  --color-primary: #3B82F6;
+  --color-primary-dark: #2563EB;
+  --color-primary-tint: #172036;
+  --color-primary-line: #1E3A8A;
+
+  --color-high: #F87171;
+  --color-high-tint: #2A1717;
+  --color-high-line: #7F1D1D;
+  --color-medium: #FBBF24;
+  --color-medium-tint: #2B2110;
+  --color-medium-line: #78350F;
+  --color-low: #60A5FA;
+  --color-low-tint: #172036;
+  --color-low-line: #1E3A8A;
+  --color-clear: #9CA3AF;
+  --color-clear-tint: #1F2530;
+  --color-clear-line: #374151;
+
+  --color-ok: #4ADE80;
+  --color-ok-tint: #12291C;
+  --color-llm: #A78BFA;
+  --color-llm-tint: #241B3D;
+  --color-neo: #34D399;
+  --color-neo-tint: #0F2E26;
+
+  --color-tooltip: #F1F5F9;
+  --color-on-tooltip: #0F1419;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / .4), 0 1px 2px -1px rgb(0 0 0 / .3);
+  --shadow-pop: 0 10px 15px -3px rgb(0 0 0 / .5), 0 4px 6px -4px rgb(0 0 0 / .4);
+}
+
+html { font-size: 14px; }
+body { @apply bg-canvas text-ink-2 antialiased; font-feature-settings: "tnum" 1, "cv05" 1; }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  font-size: 18px; line-height: 1; vertical-align: -4px;
+}
+
+.card { @apply bg-card rounded-xl border border-line shadow-card; }
+
+table { @apply w-full border-collapse; }
+th { @apply text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-muted py-2.5 px-3 bg-well border-b border-line whitespace-nowrap select-none; }
+td { @apply py-2.5 px-3 border-b border-line-soft align-middle whitespace-nowrap; }
+tr:last-child td { @apply border-b-0; }
+.num { @apply text-right tabular-nums; }
+.mono { @apply font-mono text-[12.5px]; }
+
+.prose-report h1 { @apply text-lg font-semibold tracking-tight mt-1 mb-3 text-ink; }
+.prose-report h2 { @apply text-[13px] font-semibold text-ink mt-6 mb-2 pb-1.5 border-b border-line; }
+.prose-report p  { @apply my-2 leading-relaxed; }
+.prose-report ul { @apply list-disc pl-5 my-2; }
+.prose-report li { @apply my-1; }
+.prose-report table { @apply my-3 text-[13px]; }
+.prose-report td, .prose-report th { @apply whitespace-normal py-1.5; }
+.prose-report code { @apply font-mono text-[12px] bg-well border border-line px-1 rounded; }
+.prose-report hr { @apply my-4 border-line; }
+.prose-report em { @apply text-muted; }

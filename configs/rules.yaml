@@ -1,0 +1,67 @@
+# Thresholds derived from HI-Small (5.08M rows) + HI-Small_Patterns.txt
+# (370 labelled groups). Weights reflect MEASURED lift on the test set,
+# not intuition -- see ml/scripts/check_rules.py output.
+
+amount:
+  # Bucket analysis: risk rises monotonically to 20k (lift 5.93) then
+  # collapses to 0.59. Hard cliff -- the generator caps laundering at 20k.
+  band_low: 3000
+  band_high: 20000
+  band_tight_low: 9000
+  band_tight_high: 20000
+  hard_ceiling: 20000
+  # Roundness tested and REJECTED: round amounts launder at ~1/12th
+  # base rate in this dataset. Features dropped.
+  round_1k_flag: false
+
+structuring:
+  just_below_low: 9000
+  just_below_high: 9999
+  window_hours: 96
+
+windows_hours:
+  fast: 24        # bipartite completes in ~24h
+  standard: 96    # fan-out/in, cycle, stack, scatter-gather: 70-90h
+  slow: 192       # gather-scatter: ~151h
+
+fan_out:
+  min_destinations: 7
+  window_hours: 96
+
+fan_in:
+  min_sources: 8
+  window_hours: 96
+
+cycle:
+  min_hops: 2          # was 3 -- fired on 1 of 761k rows, far too strict
+  max_hops: 12
+  window_hours: 96
+
+stack:
+  min_chain_depth: 5   # was 4 -- lift only 1.18 at that depth
+  window_hours: 96
+
+scatter_gather:
+  min_intermediaries: 8
+  window_hours: 96
+
+gather_scatter:
+  min_intermediaries: 7
+  window_hours: 192
+
+# rapid_pass_through REMOVED: lift 0.10 on 123k rows, anti-correlated.
+# The io_ratio band catches ordinary pass-through accounts, not mules.
+
+scoring:
+  # Weights proportional to measured lift on the held-out test period.
+  weights:
+    fan_in: 8            # lift 8.48
+    amount_band: 6       # lift 6.22
+    gather_scatter: 6    # lift 5.86
+    cycle: 4             # re-measure after the threshold change
+    structuring: 3       # lift 2.69
+    weekend: 2           # lift 1.63
+    fan_out: 1           # lift 1.43
+    stack: 1             # lift 1.18
+    scatter_gather: 0    # lift 0.89 -- shown in reports, no score weight
+  max_score: 31
