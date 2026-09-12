@@ -141,6 +141,13 @@ Light and dark themes (header toggle; follows the OS by default, right-click the
 
 ---
 
+## Documentation
+
+Longer-form docs live in [`docs/`](docs/README.md):
+[architecture](docs/architecture.md) · [ML pipeline](docs/pipeline.md) · [investigation agent](docs/agent.md) · [API reference](docs/api.md) · [frontend](docs/frontend.md) · [operations & troubleshooting](docs/operations.md)
+
+---
+
 ## Known limits
 
 - `find_cycles` (`SENT*2..6` Cypher) takes ~30 s on hub accounts; results are cached per account after the first call. Reduce `max_hops` in `ml/graph/queries.py` if this matters.
