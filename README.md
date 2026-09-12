@@ -1,32 +1,29 @@
 # AML Ledger
 
-**Explainable anti-money-laundering detection and alert triage** — from raw transactions to a ranked alert queue, graph evidence, SHAP explanations, and LLM-written investigation reports that can only cite figures produced by tools.
+> Explainable anti-money-laundering detection and alert triage — from raw transactions to a ranked queue, graph evidence, SHAP explanations, and LLM-written investigation reports.
 
-Built on the IBM AML synthetic dataset (HI-Small, 5.08 M transactions). Python ML pipeline · Neo4j graph · FastAPI backend · React triage console.
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009688?style=flat-square&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
+![Neo4j](https://img.shields.io/badge/Neo4j-6.3-008CC1?style=flat-square&logo=neo4j&logoColor=white)
+![XGBoost](https://img.shields.io/badge/XGBoost-3.2-FF6600?style=flat-square)
 
-**Held-out test period (761,635 transactions, 0.205 % laundering):**
-XGBoost PR-AUC **0.374** · HIGH band = 819 alerts at **60 % precision** (293× the base rate) · MEDIUM 6 % · LOW 1 %.
+Built on the **IBM AML synthetic dataset** — 5.08 M transactions, 370 labelled laundering groups. Python ML pipeline · Neo4j graph · FastAPI · React triage console.
 
 ---
 
-## Contents
+## Results
 
-1. [Screenshots](#screenshots)
-2. [What it does](#what-it-does)
-3. [Architecture](#architecture)
-4. [How the risk score works](#how-the-risk-score-works)
-5. [The ML pipeline](#the-ml-pipeline)
-6. [Graph layer (Neo4j)](#graph-layer-neo4j)
-7. [Explainability (SHAP)](#explainability-shap)
-8. [Investigation agents (LLM)](#investigation-agents-llm)
-9. [Backend (FastAPI)](#backend-fastapi)
-10. [Frontend (React)](#frontend-react)
-11. [Repository layout](#repository-layout)
-12. [Setup](#setup)
-13. [Running](#running)
-14. [Configuration](#configuration)
-15. [Troubleshooting](#troubleshooting)
-16. [Known limits & caveats](#known-limits--caveats)
+Held-out test period · 761,635 transactions · 0.205 % laundering rate
+
+| Band | Alerts | Precision | vs. Base Rate |
+|---|---|---|---|
+| **HIGH** | 819 | **60.1 %** | 293× |
+| MEDIUM | 6,953 | 6.1 % | 30× |
+| LOW | 30,310 | 1.1 % | 5× |
+| CLEAR | 723,553 | 0.04 % | — |
+
+XGBoost PR-AUC **0.374** against a 0.002 random baseline.
 
 ---
 
@@ -40,122 +37,85 @@ XGBoost PR-AUC **0.374** · HIGH band = 819 alerts at **60 % precision** (293× 
 
 ![Account network](docs/screenshots/network.png)
 
-**Investigation agent** — the LLM chose `risk_lookup → rule_check → shap_explanation`, answered in 2.4 s, and every call is in the execution trace.
+**Investigation agent** — the LLM chose `risk_lookup → rule_check → shap_explanation`, answered in 2.4 s, full tool trace shown.
 
 ![Ask the agent](docs/screenshots/ask.png)
 
 ---
 
-## What it does
+## What It Does
 
-A compliance analyst opens the **queue** and sees transactions ranked by risk, with a band (HIGH / MEDIUM / LOW / CLEAR) and a recommended action (REPORT / REVIEW / MONITOR / NONE). Clicking one opens a **case file**:
+A compliance analyst opens the **queue** and sees transactions ranked by risk, each with a band (HIGH / MEDIUM / LOW / CLEAR) and a recommended action (REPORT / REVIEW / MONITOR / NONE).
 
-- *why* the model flagged it — six plain-English SHAP drivers ("receiver received from 9 distinct accounts in the last 96 h")
-- which deterministic **typology rules** fired (fan-in, cycle, structuring…) with descriptions
-- the **money flow** around both accounts in the last 96 h, with the alerted transfer highlighted
-- a **Neo4j network** of both parties and their counterparties
-- a button that runs an **LLM investigation** and writes a narrative from gathered evidence
-- a generated **SAR-draft report** in markdown
+Clicking a transaction opens a **case file**:
 
-From any account they can open its full **transaction graph** (1 or 2 hops, cycles back to itself, shared-counterparty rings), and from anywhere they can **ask the agent** a free-text question — the LLM picks which tools to call, including graph queries, and shows its work.
+- **Why it was flagged** — six plain-English SHAP drivers ("receiver received from 9 distinct accounts in 96 h")
+- **Typology rules** that fired — fan-in, cycle, structuring, and more — with descriptions
+- **Money flow** around both accounts in the last 96 h, with the alerted transfer highlighted
+- **Neo4j network** of both parties and their counterparties
+- **LLM investigation** — one click narrates the evidence into a structured report
+- **SAR-draft report** — full markdown case file, ready to export
 
-Every number in the UI is tagged with its source (`NEO4J`, `XGBOOST`, `SHAP`, `RULES`, `LLM`, `FEATURE STORE`), so an analyst — or an auditor — can see where it came from.
+From any account, analysts can explore the full **transaction graph** (1 or 2 hops, cycles, shared-counterparty rings). The **Ask** page takes free-text questions — the LLM picks tools, runs them, and shows its work.
+
+Every number in the UI is tagged with its source: `NEO4J` `XGBOOST` `SHAP` `RULES` `LLM` `FEATURE STORE`.
 
 ---
 
 ## Architecture
 
 ```
-data/raw/HI-Small_Trans.csv (5.08 M txns)        data/raw/HI-Small_Patterns.txt (370 labelled groups)
-          │                                                      │
-     ml/data.py   clean · composite account ids · FX → USD       ml/patterns.py   typology profiles → rule thresholds
+data/raw/HI-Small_Trans.csv (5.08 M txns)
           │
-     ml/features/   transaction (stateless) · behavioural (rolling, past-only) · graph (previous bucket only)
+     ml/data.py   clean · composite account ids · FX → USD
           │
-     data/processed/features.parquet      5,078,336 rows × 78 features + ids + label
+     ml/features/
+       transaction.py    stateless per-row features
+       behavioral.py     rolling windows [t−w, t), no leakage
+       graph.py          previous bucket only
           │
-   ┌──────┴────────────────────────┬─────────────────────────────┐
- ml/models/xgb.py            ml/models/rules.py            ml/models/iforest.py
- supervised booster          9 typology rules              unsupervised (43 behavioural cols)
- → probability, percentile   → fired flags, rule_score     → anomaly percentile
-   └──────┬────────────────────────┴─────────────────────────────┘
+     data/processed/features.parquet   5,078,336 rows × 78 features
+          │
+   ┌──────┴──────────────────┬───────────────────────────────┐
+ ml/models/xgb.py      ml/models/rules.py         ml/models/iforest.py
+ supervised booster    9 typology rules            unsupervised anomaly
+ → score, percentile   → flags, evidence           → anomaly percentile
+   └──────┬──────────────────┴───────────────────────────────┘
      ml/models/fusion.py
-       band    = percentile ≥ 99.9 → HIGH · ≥ 99 → MEDIUM · ≥ 95 → LOW · else CLEAR
-       escalate one band when ≥ 2 of {cycle, fan_in, gather_scatter, amount_band} co-fire
-       action  = REPORT / REVIEW / MONITOR / NONE
-       anomaly_pct attached as evidence — never changes the band
+       band    HIGH (≥99.9th) · MEDIUM (≥99th) · LOW (≥95th) · CLEAR
+       escalate one band when ≥2 high-precision rules co-fire
+       anomaly_pct attached as evidence, never changes the band
           │
-   ┌──────┴──────────────┬──────────────────────────┐
- ml/explain.py (SHAP)   ml/graph/ (Neo4j)          ml/agent/tools.py  ToolBox — 13 tools wrapping all of the above
-   └──────┬──────────────┴──────────────────────────┘
-     ml/agent/agent.py   gather() fixed evidence set → narrate() Gemini, prose only
-     ml/agent/ask.py     LLM chooses tools → answer + auditable trace
-     ml/agent/report.py  markdown case file
+   ┌──────┴──────────────┬─────────────────────────┐
+ ml/explain.py        ml/graph/               ml/agent/tools.py
+ SHAP TreeExplainer   Neo4j queries           ToolBox — 13 tools
+   └──────┬──────────────┴─────────────────────────┘
+     ml/agent/agent.py    gather() fixed evidence → narrate() via Gemini
+     ml/agent/ask.py      LLM picks tools → answer + auditable trace
+     ml/agent/report.py   markdown case file assembly
           │
-     backend/   FastAPI — loads everything once at startup, serves JSON, 202+poll for slow work
+     backend/  FastAPI — loads once at startup, 202+poll for slow work
           │
-     frontend/  React — queue · case file · account network · overview · ask
+     frontend/ React — queue · case file · account graph · overview · ask
 ```
 
 ---
 
-## How the risk score works
+## How the Risk Score Works
 
-This is the part worth understanding; the rest is plumbing.
+**1. XGBoost ranks, not classifies.** Trained with `scale_pos_weight ≈ 1000`, the model gives excellent ranking (PR-AUC 0.374) but uncalibrated probabilities. Bands are cut on the **percentile rank**, never the raw probability.
 
-**1. XGBoost ranks.** The booster is trained with `scale_pos_weight ≈ 1000` (the class ratio). That gives excellent ranking (PR-AUC 0.374 against a 0.002 random baseline) but useless probabilities — the top decile averages p = 0.16 against an actual 1.8 % positive rate. So **bands are cut on the percentile rank of the score**, never on the raw probability.
+**2. Rules escalate and explain — they don't rank.** Rules-only PR-AUC is 0.004. Blending them into the score drops XGBoost's PR-AUC from 0.374 to 0.189. Rules do two things only: bump a transaction one band when ≥ 2 high-precision rules co-fire, and supply readable evidence sentences.
 
-**2. Rules escalate and explain — they do not rank.** Rules-only PR-AUC is 0.004. If you blend them into the score, XGBoost's PR-AUC drops from 0.374 to 0.189, because 95 % of rows share a near-zero model score and the rules then dominate the ordering. Rules therefore do exactly two things: bump a transaction up one band when ≥ 2 high-precision rules fire together, and supply the sentences an investigator reads ("account received funds from an unusual number of sources"). A tiny nudge (`+0.05 × rule_score_norm`) breaks ties without reordering.
+**3. Isolation Forest is evidence only.** PR-AUC 0.002 alone. It answers "is this behaviour unusual regardless of the label?" — shown as an anomaly percentile in the case file, never fused into the band.
 
-**3. Isolation Forest is evidence, not score.** Alone it scores PR-AUC 0.002 — random. But it answers a different question ("is this account's behaviour unusual regardless of what the label says?"), which is what matters for a typology the supervised model never saw. It is shown as an anomaly percentile in the case file, the report and the agent's evidence, and never fused.
+**4. No leakage.** Behavioural windows cover `[t − w, t)` excluding the current row. Graph features use only the previous 24 h bucket. Train / val / test split is by row quantile (70 / 85 / 100 %), not calendar date.
 
-**4. No leakage.** Behavioural windows cover `[t − w, t)` and exclude the current row. Graph features are built only from the *previous* 24 h bucket. The train / validation / test split is by row quantile (≤ 70 % / 70–85 % / > 85 %), not calendar date — the dataset has a thin tail running to Sep 18 that would otherwise leave a 74-row test set.
-
-**5. The LLM writes prose only.** Every figure in a narrative or answer comes from a tool result. A hallucinated amount in a suspicious-activity report is a compliance failure, not a cosmetic bug.
+**5. The LLM writes prose only.** Every figure in a narrative comes from a tool result. A hallucinated amount in a suspicious-activity report is a compliance failure, not a cosmetic bug.
 
 ---
 
-## The ML pipeline
-
-### Data (`ml/data.py`)
-
-Two traps the loader handles: account numbers are unique only *within* a bank, so ids become `bank-account` composites; and paid/received amounts differ across currencies, so everything is normalised to USD with the FX table in `configs/config.yaml`.
-
-### Features — 78 columns (`ml/features/`)
-
-| Family | Examples | Leakage rule |
-|---|---|---|
-| **Transaction** (`transaction.py`) | amount bands (3k–20k, 9k–20k), just-below-10k, cross-bank, cross-currency, hour, weekday, currency, payment format | stateless — one row in, one row out |
-| **Behavioural** (`behavioral.py`) | per-account counts / sums / distinct counterparties over 24 h, 96 h, 192 h; hours since previous in/out; new-sender / new-receiver; in-out ratio | window `[t − w, t)`, current row excluded |
-| **Graph** (`graph.py`) | degree, PageRank, community size, same-community, triangles, `g_chain_depth` (layering), `g_cycle_len`, reciprocity | built from the previous time bucket only |
-
-Roundness features ("just under a round thousand") were tested and dropped: in this generator round amounts launder at ~1/12 the base rate.
-
-### Models (`ml/models/`)
-
-**XGBoost** — `binary:logistic`, depth 6, learning rate 0.05, subsample 0.8, early stopping on validation PR-AUC. All 78 features.
-
-**Rules** — nine deterministic checks on the feature matrix. Thresholds were derived from the 370 labelled pattern groups; weights are proportional to *measured* lift on the test period (`configs/rules.yaml`):
-
-| Rule | Condition | Weight | Lift |
-|---|---|---|---|
-| fan_in | ≥ 8 distinct sources in 96 h | 8 | 8.5× |
-| amount_band | 9,000 ≤ amount ≤ 20,000 | 6 | 6.2× |
-| gather_scatter | ≥ 7 sources in 192 h and ≥ 2 destinations | 6 | 5.9× |
-| cycle | funds return to sender (`g_cycle_len ≥ 2`) | 4 | — |
-| structuring | 9,000–9,999 (just under a reporting threshold) | 3 | 2.7× |
-| weekend | outside the business week | 2 | 1.6× |
-| fan_out | ≥ 7 destinations in 96 h | 1 | 1.4× |
-| stack | layering chain ≥ 5 hops | 1 | 1.2× |
-| scatter_gather | ≥ 8 destinations and ≥ 2 sources | 0 | 0.9× (shown, not scored) |
-
-Anything above $20k is hard-ruled out — nothing above that ceiling launders in this dataset. A "rapid pass-through" rule was tried and removed (lift 0.10, anti-correlated).
-
-**Isolation Forest** — 200 trees × 256 samples, fit on 500k training rows over the 43 numeric behavioural columns; raw score converted to a percentile against the training distribution.
-
-### Evaluation (`ml/evaluation.py`)
-
-Accuracy is meaningless at a 0.2 % positive rate (predicting "never" scores 99.8 %). Reported instead: PR-AUC, ROC-AUC, and precision / recall at fixed alert budgets (100 / 500 / 1,000 / 5,000 alerts) — i.e. "if an analyst reviews 1,000 a day, how many are real?"
+## Models & Evaluation
 
 | Model | PR-AUC | Role |
 |---|---|---|
@@ -163,211 +123,191 @@ Accuracy is meaningless at a 0.2 % positive rate (predicting "never" scores 99.8
 | Rules only | 0.004 | escalation + evidence |
 | Isolation Forest only | 0.002 | evidence |
 
-| Band | Alerts | Positives | Precision |
+### Typology Rules
+
+| Rule | Condition | Weight | Lift |
 |---|---|---|---|
-| HIGH | 819 | 492 | 60.1 % |
-| MEDIUM | 6,953 | 427 | 6.1 % |
-| LOW | 30,310 | 346 | 1.1 % |
-| CLEAR | 723,553 | 296 | 0.04 % |
+| fan_in | ≥ 8 distinct sources in 96 h | 8 | 8.5× |
+| amount_band | $9,000 – $20,000 | 6 | 6.2× |
+| gather_scatter | ≥ 7 sources in 192 h and ≥ 2 destinations | 6 | 5.9× |
+| cycle | funds return to sender | 4 | — |
+| structuring | $9,000 – $9,999 (just under threshold) | 3 | 2.7× |
+| weekend | outside business week | 2 | 1.6× |
+| fan_out | ≥ 7 destinations in 96 h | 1 | 1.4× |
+| stack | layering chain ≥ 5 hops | 1 | 1.2× |
+| scatter_gather | ≥ 8 destinations and ≥ 2 sources | — | shown, not scored |
 
----
+### Features — 78 columns
 
-## Graph layer (Neo4j)
-
-`ml/graph/loader.py` loads **alerted accounts plus one hop of neighbours** — not all 5 M transactions, since the investigation layer never queries the other 99 %. Schema: `(:Account {id})-[:SENT {txn_id, amount, timestamp, is_laundering}]->(:Account)`.
-
-`ml/graph/queries.py` answers the questions an investigator asks:
-
-| Function | Cypher idea | Used by |
+| Family | Examples | Leakage rule |
 |---|---|---|
-| `connected_accounts` | direct counterparties, both directions, totals | account page, agent |
-| `money_flow` | `SENT*1..N` from an account, summed along the path | agent |
-| `find_cycles` | `SENT*2..6` back to the same account | account page, investigate, ask |
-| `shortest_path` | shortest `SENT` path between two accounts | ask |
-| `fraud_ring` | accounts sharing ≥ 3 counterparties | account page, agent |
-| `account_summary` | totals sent / received | agent |
-
-The backend adds one more query for visualisation: a hop-by-hop BFS (one query per level, capped) followed by all `SENT` edges among the collected nodes — so a hub account cannot blow up the traversal.
-
-`find_cycles` on a busy account takes ~30 s; the backend caches account responses after the first call.
+| **Transaction** | amount bands, cross-bank, cross-currency, hour, format | stateless |
+| **Behavioural** | rolling counts/sums/counterparties over 24 h / 96 h / 192 h | window `[t−w, t)` |
+| **Graph** | degree, PageRank, community, chain depth, cycle length | previous bucket only |
 
 ---
 
-## Explainability (SHAP)
+## Graph Layer (Neo4j)
 
-`ml/explain.py` uses `shap.TreeExplainer` — exact for tree ensembles, so single-alert explanations need no sampling. The important part is `LABELS`: a map from column names to sentences, because `out_96h_ncp` means nothing to an investigator and "sender paid 9 distinct accounts in 96 h" means everything. The case file shows the top six positive drivers as bars; the report lists them as bullets with signed impact.
+Only alerted accounts and one hop of neighbours are loaded — not all 5 M transactions.
+
+**Schema:** `(:Account {id})-[:SENT {txn_id, amount, timestamp, is_laundering}]->(:Account)`
+
+| Query | What it finds |
+|---|---|
+| `connected_accounts` | direct counterparties, both directions |
+| `money_flow` | where funds went, up to N hops |
+| `find_cycles` | money returning to the sender — the layering signature |
+| `shortest_path` | how two accounts are connected |
+| `fraud_ring` | accounts sharing ≥ 3 counterparties — possible coordinated ring |
+| `account_summary` | totals sent / received |
+
+`find_cycles` on a hub account takes ~30 s (cached after first call).
 
 ---
 
-## Investigation agents (LLM)
+## Investigation Agents (LLM)
 
-Both modes share `ml/agent/tools.py::ToolBox` — 13 thin wrappers over the modules above (`transaction_search`, `account_lookup`, `aggregation`, `risk_lookup`, `xgboost_prediction`, `anomaly_detection`, `rule_check`, `shap_explanation`, `graph_search`, `path_analysis`, `money_flow`, `find_cycles`, `community_detection`). The agent owns no detection logic; the same functions serve the CLI, the report and the LLM.
+Both modes share `ml/agent/tools.py::ToolBox` — 13 thin wrappers over the pipeline. The agent owns no detection logic; the same functions serve the CLI, the report, and the LLM.
 
-**Investigate** (`ml/agent/agent.py`) — deliberately *not* autonomous. `gather()` runs a fixed evidence set (transaction, risk, model, anomaly, rules, SHAP, both parties' activity, receiver's counterparties / cycles / ring) and `narrate()` gives Gemini one shot at prose over it, temperature 0.2. Reproducible and auditable, which a regulated setting needs. If no API key is set or the call fails, a deterministic template narrative is produced from the same evidence — the demo never depends on a network call.
+**Investigate** (`agent.py`) — not autonomous. `gather()` runs a fixed evidence set, `narrate()` gives Gemini one shot at prose over it (temperature 0.2). Reproducible and auditable. Falls back to a deterministic template if no API key is set.
 
-**Ask** (`ml/agent/ask.py`) — autonomous tool use. The 13 tool specs become Gemini function declarations; a manual loop (automatic calling disabled) executes each requested tool on `ToolBox`, records `{tool, args, result, ms}`, feeds the result back, and stops when the model answers or after 8 rounds. Tool names are validated against the spec list, tool errors become results rather than crashes, and the full trace is returned and shown in the UI. Temperature 0.1 — tool paths can differ between runs, which is why Investigate exists for the reproducible case.
+**Ask** (`ask.py`) — autonomous tool use. Tool specs become Gemini function declarations; a manual loop executes each requested tool, records `{tool, args, result, ms}`, feeds results back, and stops when the model answers or after 8 rounds. Full trace shown in the UI (temperature 0.1).
 
-Prompt rules for both (`ml/agent/prompts.py`): use only the figures given; say plainly when evidence is absent; describe behaviour, never assert guilt ("consistent with", "warrants review"); name the typology when the evidence supports it; no headings or bullet lists.
-
-`ml/agent/report.py` assembles the markdown case file — why flagged / money flow / connected accounts / risk factors / supporting evidence / recommended action — and the narrative is spliced in as an "Investigator summary" once it exists.
+**Prompt rules** (`prompts.py`): use only given figures · say plainly when evidence is absent · describe behaviour, never assert guilt · name typologies when evidence supports it · no hallucinated amounts.
 
 ---
 
-## Backend (FastAPI)
+## API Reference
 
-`backend/main.py` · `deps.py` · `schemas.py` · `routers/{health, stats, alerts, accounts, transactions, predict, ask}.py`
+Base path: `/api` · Interactive docs: `http://localhost:8000/docs`
 
-**Startup** (`deps.load_state`, in a lifespan handler, once): read `features.parquet`, keep rows after the 85 % timestamp quantile (761,635), load the booster and Isolation Forest, score and fuse, build the SHAP explainer and `ToolBox`, precompute stats and per-account risk. ~10 s. If anything fails the server still starts — `/health` reports the error and only affected endpoints return 503. A missing `iforest.joblib` just leaves anomaly fields null.
-
-**Slow work is a job.** `/investigate` and `/ask` return `202` with a job id and are polled; they run on a small thread pool so a 30 s Cypher query never blocks the queue. Investigate results are cached per transaction; the ask trace fills in live as each tool completes.
-
-**Endpoints** (base `/api`, interactive docs at `/docs`):
-
-| Method | Path | Returns |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/health` | model / anomaly model / Neo4j / LLM status, rows scored — never 503s |
-| GET | `/stats` | band counts & precision, alerts per day, base rate |
-| GET | `/alerts?band=&min_score=&page=&page_size=&sort=` | paginated queue; `band` repeatable; default excludes CLEAR; `sort=-risk_score` style |
-| GET | `/alerts/{id}` | transaction, risk (incl. anomaly pct), rules fired, SHAP drivers, 96 h money flow, counterparties, activity |
-| GET | `/alerts/{id}/report` | markdown case report |
-| POST / GET | `/alerts/{id}/investigate` | 202 + job → poll; `?force=true` re-runs; 503 if Neo4j down |
-| POST | `/ask` `{question, txn_id?, account_id?}` · GET `/ask/{job_id}` | 202 + job → answer + tool trace; 503 if no LLM key |
-| GET | `/accounts/{id}` | activity, worst band, Neo4j counterparties / cycles / ring (`graph_available:false` if Neo4j down); cached, `?refresh=true` |
-| GET | `/accounts/{id}/graph?hops=1\|2&limit=` | nodes (band, alerts) + edges (amount, band, `is_laundering`) |
-| GET | `/transactions?account=&direction=` · `/transactions/{id}` | raw rows over all 5 M transactions, with band when scored |
-| POST | `/predict` `{txn_ids:[…]}` or `{features:{…}}` | score, percentile, band, rules, anomaly — ad-hoc rows go through the same xgb + rules + IF path |
-
-Errors are `{"detail": "…"}`. 404 for ids outside the scored period, 422 for bad input, 503 for a missing dependency. CORS is open to `localhost:5173`.
+| GET | `/health` | Model / Neo4j / LLM status — never 503s |
+| GET | `/stats` | Band counts, precision, daily volumes, base rate |
+| GET | `/alerts` | Paginated queue — `band`, `min_score`, `page`, `sort` params |
+| GET | `/alerts/{id}` | Full case: risk, rules, SHAP drivers, money flow, counterparties |
+| GET | `/alerts/{id}/report` | Markdown SAR-draft report |
+| POST/GET | `/alerts/{id}/investigate` | 202 → poll; `?force=true` re-runs |
+| POST/GET | `/ask` · `/ask/{job_id}` | Free-text question → answer + tool trace |
+| GET | `/accounts/{id}` | Activity, worst band, graph neighbours |
+| GET | `/accounts/{id}/graph` | Nodes + edges for visualisation (`hops=1\|2`) |
+| GET | `/transactions/{id}` | Raw transaction with band if scored |
+| POST | `/predict` | Score ad-hoc transaction ids or feature rows |
 
 ---
 
-## Frontend (React)
+## Frontend
 
-React 19 · Vite · TypeScript · Tailwind 4 · TanStack Query 5 · react-router 7 · react-force-graph-2d · react-markdown. Design tokens are from a Google Stitch export ("AML Ledger"): `#F7F8FA` canvas, white 12 px cards, Inter + JetBrains Mono, pill badges, `#2563EB` primary — with a full dark palette.
+React 19 · Vite · TypeScript · Tailwind 4 · TanStack Query 5 · react-router 7
 
 | Route | Screen |
 |---|---|
-| `/` | **Queue** — band cards toggle filters; sortable, paginated table; filters / sort / page live in the URL |
-| `/alerts/:id` | **Case file** — score, anomaly percentile, disposition, pattern rules; Detail / SAR-draft tabs; sticky module rail; SHAP bars, rules, money flow, counterparties, Neo4j mini-graph, investigator narrative |
-| `/accounts/:id?hops=1\|2` | **Account network** — alerts / outflow / inflow, force-directed graph with zoom, counterparties, cycles, shared-counterparty peers |
-| `/overview` | **Risk overview** — stat tiles, alerts-per-day chart (log / linear / table), precision by band, top-10 HIGH |
-| `/ask?txn=&account=` | **Investigation agent** — question, context chip, live job bar, answer + numbered tool trace with expandable JSON |
+| `/` | **Queue** — band cards toggle filters, sortable paginated table, state in URL |
+| `/alerts/:id` | **Case file** — score, SHAP bars, rules, money flow, mini-graph, narrative, SAR tab |
+| `/accounts/:id` | **Account network** — force-directed graph, counterparties, cycles, peers |
+| `/overview` | **Risk overview** — stat tiles, daily chart, precision by band, top HIGH |
+| `/ask` | **Investigation agent** — question, live job progress, answer + tool trace |
 
-How it's built:
-
-- `src/api/` — `types.ts` mirrors `backend/schemas.py`; `client.ts` wraps fetch into `ApiError(status, detail)`; `hooks.ts` holds the TanStack hooks, including the POST → poll pattern for jobs.
-- `src/components/ui.tsx` — `Card`, `Stat`, `BandPill`, `SourceTag`, `Button`, `ErrorBox`, `Empty`, `Skeleton`, `Kv`. Everything else composes these.
-- **Tokens** — every colour is a semantic Tailwind token (`bg-card`, `text-muted`, `border-high-line`…) declared in `src/index.css` and overridden under `.dark`. The band → class map lives in one place (`lib/format.ts`).
-- **Dark mode** — class strategy; header toggle; preference in `localStorage`, otherwise follows the OS and reacts to changes; canvas / SVG colours come from `lib/theme.tsx::chartColors`.
-- **Loading & errors** — skeletons for content, spinners only inside long-running buttons; 4xx is never retried; every fetch failure renders a visible error box with retry.
-- **Source tags** — pass `sources={['neo4j', 'shap']}` to a `Card` and it shows the origin chips in its header.
+Light and dark themes (follows OS by default, toggle in header). Every panel shows a source tag so the origin of each number is always visible.
 
 ---
 
-## Repository layout
+## Repository Layout
 
 ```
-ml/                     pipeline (importable package)
-  data.py               load + clean raw csv
-  patterns.py           parse Patterns.txt → typology profiles
-  eda.py  evaluation.py explain.py
-  features/             transaction.py · behavioral.py · graph.py · build.py
-  models/               xgb.py · rules.py · iforest.py · fusion.py
-  graph/                loader.py (Neo4j load) · queries.py (Cypher)
-  agent/                tools.py · agent.py · ask.py · report.py · prompts.py · context.py
-  scripts/              build_features · train · train_iforest · load_graph · score · evaluate · investigate · run_eda · run_patterns
-  scripts/checks/       dev sanity checks (not part of the pipeline)
-backend/                FastAPI app (main.py · deps.py · schemas.py · routers/)
+ml/                     ML pipeline (importable)
+  data.py               load + clean raw CSV
+  features/             transaction · behavioral · graph · build
+  models/               xgb · rules · iforest · fusion
+  graph/                Neo4j loader + Cypher queries
+  agent/                tools · agent · ask · report · prompts
+  scripts/              build_features · train · train_iforest · load_graph
+                        score · evaluate · investigate · run_eda
+backend/                FastAPI (main · deps · schemas · routers/)
 frontend/               React app (src/api · src/components · src/pages · src/lib)
-configs/                config.yaml (dataset, FX) · rules.yaml (thresholds, weights) · features.yaml
-docs/                   longer write-ups per area + screenshots/
-data/raw/               HI-Small_Trans.csv · HI-Small_Patterns.txt        (not committed)
-data/processed/         features.parquet · transactions_clean.parquet …   (generated)
-models/                 xgb.json · xgb_columns.json · iforest.joblib       (generated)
-outputs/                EDA figures · CLI-generated reports                (generated)
+configs/                config.yaml · rules.yaml · features.yaml
+data/raw/               HI-Small_Trans.csv · HI-Small_Patterns.txt   ← not committed
+data/processed/         features.parquet · transactions_clean.parquet ← generated
+models/                 xgb.json · xgb_columns.json · iforest.joblib  ← generated
 ```
 
 ---
 
 ## Setup
 
-**Requirements:** Python 3.11 · Node 20+ · Neo4j 5 on `bolt://localhost:7687` (needed for graph views and the agents) · a Gemini API key (optional — without it narratives use the template fallback and `/ask` is disabled).
+**Requirements:** Python 3.11 · Node 20+ · Neo4j 5 on `bolt://localhost:7687` · Gemini API key (optional)
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env            # NEO4J_PASSWORD · GEMINI_API_KEY · optionally GEMINI_MODEL
+cp .env.example .env            # fill NEO4J_PASSWORD and GEMINI_API_KEY
 cd frontend && npm install && cd ..
 ```
 
-Put `HI-Small_Trans.csv` and `HI-Small_Patterns.txt` in `data/raw/`, then build the artefacts (once):
+Place `HI-Small_Trans.csv` and `HI-Small_Patterns.txt` in `data/raw/`, then build the artefacts once:
 
 ```bash
-.venv/bin/python -m ml.scripts.build_features   # features.parquet, ~2 GB, several minutes
-.venv/bin/python -m ml.scripts.train            # models/xgb.json + test report
+.venv/bin/python -m ml.scripts.build_features   # ~2 GB parquet, several minutes
+.venv/bin/python -m ml.scripts.train            # models/xgb.json
 .venv/bin/python -m ml.scripts.train_iforest    # models/iforest.joblib
-.venv/bin/python -m ml.scripts.load_graph       # alerted neighbourhoods → Neo4j (Neo4j must be running)
+.venv/bin/python -m ml.scripts.load_graph       # alerted accounts → Neo4j
 ```
 
 ---
 
 ## Running
 
-Two processes, from the project root:
-
 ```bash
-.venv/bin/uvicorn backend.main:app --reload --port 8000     # loads the pipeline once, ~10 s
+# Terminal 1 — backend (loads pipeline once, ~10 s)
+.venv/bin/uvicorn backend.main:app --reload --port 8000
+
+# Terminal 2 — frontend
+cd frontend && npm run dev
 ```
 
-```bash
-cd frontend && npm run dev                                   # http://localhost:5173
-```
+Open **http://localhost:5173**. Check **http://localhost:8000/api/health** for system status.
 
-Open http://localhost:5173. The header pill shows system status; `http://localhost:8000/api/health` gives the detail. Stop servers with **Ctrl+C** — Ctrl+Z only suspends and keeps the port.
-
-CLI equivalents without the UI:
+**CLI equivalents:**
 
 ```bash
-.venv/bin/python -m ml.scripts.score --top 5                 # top alerts
-.venv/bin/python -m ml.scripts.investigate --txn 4565663     # narrative + report → outputs/reports/
-.venv/bin/python -m ml.scripts.evaluate                      # metrics on the held-out period
+.venv/bin/python -m ml.scripts.score --top 5
+.venv/bin/python -m ml.scripts.investigate --txn 4565663
+.venv/bin/python -m ml.scripts.evaluate
 ```
 
 ---
 
 ## Configuration
 
-| Where | What |
+| File | Controls |
 |---|---|
-| `.env` | `NEO4J_URI` `NEO4J_USER` `NEO4J_PASSWORD` `GEMINI_API_KEY` `GEMINI_MODEL` — secrets and machine-specific details; read with `override=True` |
-| `configs/config.yaml` | dataset filenames, FX-to-USD table, Neo4j defaults |
-| `configs/rules.yaml` | amount bands, structuring window, rolling windows (24 / 96 / 192 h), per-rule thresholds, scoring weights, `max_score` |
-| `ml/models/fusion.py` | band cut-offs (`99.9 / 99 / 95`), escalating rule set, escalation minimum |
-| `frontend/.env` | `VITE_API_BASE` (default `http://localhost:8000`) |
+| `.env` | `NEO4J_URI` · `NEO4J_PASSWORD` · `GEMINI_API_KEY` · `GEMINI_MODEL` |
+| `configs/config.yaml` | Dataset filenames, FX-to-USD table |
+| `configs/rules.yaml` | Amount bands, rolling windows, rule thresholds and weights |
+| `ml/models/fusion.py` | Band cut-offs (99.9 / 99 / 95th percentile), escalation logic |
 
-Thresholds are committed because they are part of the methodology a reviewer needs; secrets never are.
+Thresholds are committed — they are part of the methodology. Secrets never are.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
+| Symptom | Fix |
 |---|---|
-| `Address already in use` on 8000 or 5173 | A server is already running — usually the one you want. If it's stale: `lsof -ti :8000 \| xargs kill -9`. A Ctrl+Z'd process ignores plain `kill`. |
-| Vite refuses to move to 5174 | `strictPort` is on because backend CORS is pinned to 5173. Free 5173 instead. |
-| Header says *Degraded · neo4j* | Neo4j down or wrong password. Queue, case file and report still work; account graph, mini-graph, investigate and ask return 503. |
-| `/accounts/{id}` takes ~30 s | `find_cycles` (`SENT*2..6`) on a hub account. Cached afterwards; lower `max_hops` in `ml/graph/queries.py` if needed. |
-| `/accounts/{id}/graph` 404s | Only alerted accounts + one hop are in Neo4j. |
-| Ask returns 503 | `GEMINI_API_KEY` missing or still `your_key_here`. |
-| `pipeline failed to load: missing artefacts` | Run the setup scripts; the message lists the missing paths. |
+| `Address already in use` | `lsof -ti :8000 \| xargs kill -9` — a Ctrl+Z'd process ignores plain `kill` |
+| Vite refuses port 5174 | `strictPort` is on; free 5173 instead |
+| Header shows *Degraded · neo4j* | Neo4j down or wrong password. Queue and case file still work; graph views return 503 |
+| `/accounts/{id}` takes ~30 s | `find_cycles` on a hub account — cached after first call |
+| Ask returns 503 | `GEMINI_API_KEY` missing in `.env` |
+| `pipeline failed to load` | Run the setup scripts; the error message lists the missing paths |
 
 ---
 
-## Known limits & caveats
+## Caveats
 
-- **Synthetic data.** Thresholds (e.g. the $20k ceiling, the absence of round-amount structuring) reflect the IBM generator, not real banking behaviour. Re-derive them on real data.
-- **Ground-truth labels are shown** in the UI (`ground_truth_label`, precision figures) for evaluation. Strip them before anyone could act on this.
-- **`/predict` needs a full feature row.** Scoring a brand-new raw transaction requires rebuilding its behavioural and graph features against history; that path is not exposed.
-- **Job results live in process memory** and are lost on restart. The backend is single-process (state is ~2–3 GB); run one worker.
-- **This is a prioritisation aid**, not a determination of wrongdoing. Every report says so.
-
-Longer write-ups per area are in [`docs/`](docs/README.md).
+- **Synthetic data.** Thresholds reflect the IBM generator, not real banking behaviour. Re-derive on real data before any operational use.
+- **Labels are shown in the UI** (`ground_truth_label`, precision figures) for evaluation purposes. Remove before deployment.
+- **`/predict` needs a full feature row.** Scoring a raw new transaction requires rebuilding behavioural and graph features against history — not exposed.
+- **Single process.** State is ~2–3 GB in memory; run one worker. Job results are lost on restart.
+- **This is a prioritisation aid on synthetic data, not a determination of wrongdoing.**
